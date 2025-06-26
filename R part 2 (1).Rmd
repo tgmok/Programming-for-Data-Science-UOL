@@ -1,0 +1,499 @@
+---
+title: "Question 2"
+author: "Trixie Grace Mok"
+date: "2024-02-21"
+output: html_document
+---
+
+```{r}
+#load library
+library(conflicted)
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(ggthemes)
+library(scales)
+library(mlr3)
+library(mlr3learners)
+library(glmnet)
+library(mlr3pipelines)
+library(mlr3tuning)
+library(broom)
+library(zoo)
+library(pROC)
+library(readr)
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(ggpubr)
+library(caret)
+```
+```{r}
+# Set working directory
+setwd("C:/Users/Trixie/Desktop/From WDBLACK/Year 2 UOL Subjects/Programming Assignment/Final/Question 2/dataverse_files")
+
+```
+```{r}
+# Load data from csv files
+airports <- read.csv("airports.csv")
+carriers <- read.csv("carriers.csv")
+planes <- read.csv("plane-data.csv")
+
+flights_1999 <- read.csv("1999.csv.bz2")
+flights_2000 <- read.csv("2000.csv.bz2")
+flights_2001 <- read.csv("2001.csv.bz2")
+flights_2002 <- read.csv("2002.csv.bz2")
+flights_2003 <- read.csv("2003.csv.bz2")
+flights_2004 <- read.csv("2004.csv.bz2")
+flights_2005 <- read.csv("2005.csv.bz2")
+flights_2006 <- read.csv("2006.csv.bz2")
+flights_2007 <- read.csv("2007.csv.bz2")
+flights_2008 <- read.csv("2008.csv.bz2")
+```
+
+```{r}
+# Row bind the data from year 1999 to 2008
+tenyears_flight <- rbind(flights_1999, flights_2000, flights_2001, flights_2002, flights_2003, flights_2004, flights_2005, flights_2006, flights_2007, flights_2008)
+  
+```
+
+
+Question 2(a)
+**What are the best times and days of the week to minimise delays each year?**
+
+```{r}
+best_time_plots <- list()
+
+for (year in 1999:2008) {
+  # retrieves the data frame for the current year
+  year_flight <- get(paste0("flights_", year))
+  
+  # Clean data by filtering out cancelled and diverted flights, then remove duplicates
+  year_flight_cleaned <- year_flight %>%
+    filter(Cancelled == 0, Diverted == 0) %>%
+    distinct()
+
+  # Classify flights under 2-hour constant time frames
+  year_flight_time_intervals <- year_flight_cleaned %>%
+    mutate(dt_intervals = case_when(
+      CRSDepTime >= 0 & CRSDepTime < 200 ~ "00:00-01:59",
+      CRSDepTime >= 200 & CRSDepTime < 400 ~ "02:00-03:59",
+      CRSDepTime >= 400 & CRSDepTime < 600 ~ "04:00-05:59",
+      CRSDepTime >= 600 & CRSDepTime < 800 ~ "06:00-07:59",
+      CRSDepTime >= 800 & CRSDepTime < 1000 ~ "08:00-09:59",
+      CRSDepTime >= 1000 & CRSDepTime < 1200 ~ "10:00-11:59",
+      CRSDepTime >= 1200 & CRSDepTime < 1400 ~ "12:00-13:59",
+      CRSDepTime >= 1400 & CRSDepTime < 1600 ~ "14:00-15:59",
+      CRSDepTime >= 1600 & CRSDepTime < 1800 ~ "16:00-17:59",
+      CRSDepTime >= 1800 & CRSDepTime < 2000 ~ "18:00-19:59",
+      CRSDepTime >= 2000 & CRSDepTime < 2200 ~ "20:00-21:59",
+      CRSDepTime >= 2200 & CRSDepTime <= 2400 ~ "22:00-23:59",
+      TRUE ~ "Unknown" # Handles edge cases or invalid data
+    ))
+
+  # Fill missing values in delay columns with last observation carried forward
+  delay_columns <- c("ArrDelay", "DepDelay", "CarrierDelay", "NASDelay", "SecurityDelay", "LateAircraftDelay", "WeatherDelay")
+  year_flight_filled <- year_flight_time_intervals
+  for (col in delay_columns) {
+    year_flight_filled[[col]] <- na.locf(year_flight_filled[[col]], na.rm = FALSE)
+  }
+
+  # Calculate total delay and filter flights with any delay
+  year_flight_delays <- year_flight_filled %>%
+    mutate(total_delay = rowSums(select(., all_of(delay_columns)), na.rm = TRUE)) %>%
+    filter(total_delay > 0)
+
+  # Aggregate average delay by time intervals
+  best_time_day <- year_flight_delays %>%
+    group_by(dt_intervals) %>%
+    summarise(avg_delay = mean(total_delay, na.rm = TRUE))
+
+  # Plot average delay for each time interval
+  best_time_plots[[paste0("Year_", year)]] <- ggplot(best_time_day, aes(x = dt_intervals, y = avg_delay)) +
+    geom_bar(stat = "identity", color = "black", fill = "pink", width = 0.8) +
+    geom_text(aes(label = sprintf("%0.2f", avg_delay)), vjust = -0.4, size = 3) +
+    labs(title = paste0("Average Delay by Departure Time Interval in ", year),
+         x = "Departure Time Interval",
+         y = "Average Delay (Mins)") +
+    theme(plot.title = element_text(hjust = 0.5),
+          axis.text.x = element_text(angle = 45, hjust = 1))
+}
+# Display plots
+best_time_plots
+```
+
+
+```{r}
+
+# Initialise list to store plots
+
+list_best_day <- list()
+
+for (year in 1999:2008) {
+  year_flight <- get(paste0("flights_", year))
+  year_flight_cleaned <- year_flight %>%
+    filter(Cancelled == 0, Diverted == 0) %>%
+    distinct()
+  
+  delay_columns <- c("ArrDelay", "DepDelay", "CarrierDelay", "NASDelay", "SecurityDelay", "LateAircraftDelay", "WeatherDelay")
+  year_flight_filled <- year_flight_cleaned
+  for (col in delay_columns) {
+    year_flight_filled[[col]] <- na.locf(year_flight_filled[[col]], na.rm = FALSE)
+  }
+  
+
+  year_flight_delays <- year_flight_filled %>%
+    mutate(total_delay = rowSums(select(., all_of(delay_columns)), na.rm = TRUE)) %>%
+    filter(total_delay > 0)
+
+    
+  # Group to find best day of the week
+  best_day_week <- year_flight_delays %>%
+    filter(total_delay > 0) %>%
+    group_by(DayOfWeek) %>% 
+    summarise(avg_delay = mean(total_delay)) %>%
+    arrange(DayOfWeek)
+  best_day_week
+  
+    
+  # Plot graph for best day of the week
+    list_best_day[[paste0("Year_", year)]] <-ggplot(best_day_week, aes(x = factor(DayOfWeek, levels = c("1", "2", "3", "4", "5", "6", "7")),
+                               y = avg_delay, label = sprintf("%0.2f", round(avg_delay, digits = 2)))) +
+    geom_bar(stat = "identity", color = "black", fill = "pink", width = 0.8) +
+    scale_x_discrete(labels = c("1" = "Monday", "2" = "Tuesday", "3" = "Wednesday", "4" = "Thursday", "5" = "Friday", "6" = "Saturday", "7" = "Sunday")) +
+    labs(title = paste("Best Day Of Week in", year), x = "Day", y = "Average Delay (Mins)") + 
+    theme(plot.title = element_text(hjust = 0.5),
+          axis.text.x = element_text(angle = 20, hjust = 1)) +
+    geom_text(size = 4, hjust = 0.5, vjust = 1.5)
+
+}
+list_best_day
+```
+
+```{r}
+
+# Initialise list to store plots
+list_month_day <- list()
+
+for (year in 1999:2008) {
+
+  year_flight <- get(paste0("flights_", year))
+  
+  year_flight_cleaned <- year_flight %>%
+    filter(Cancelled == 0, Diverted == 0) %>%
+    distinct()
+  
+  delay_columns <- c("ArrDelay", "DepDelay", "CarrierDelay", "NASDelay", "SecurityDelay", "LateAircraftDelay", "WeatherDelay")
+  for (col in delay_columns) {
+    year_flight_cleaned[[col]] <- na.locf(year_flight_cleaned[[col]], na.rm = FALSE)
+  }
+  
+  year_flight_delays <- year_flight_cleaned %>%
+    mutate(total_delay = rowSums(select(., all_of(delay_columns)), na.rm = TRUE)) %>%
+    filter(total_delay > 0)
+
+  # Group to find average delay by month
+  best_month_year <- year_flight_delays %>%
+    group_by(Month) %>% 
+    summarise(avg_delay = mean(total_delay), .groups = 'drop') %>%
+    right_join(all_months_df, by = "Month") %>%
+    arrange(Month)
+  
+  # Use last observation carried forward to fill missing avg_delay values
+  best_month_year$avg_delay <- na.locf(best_month_year$avg_delay, na.rm = FALSE)
+
+  
+  # Plot graph for each month of the year
+  list_month_day[[paste0("Year_", year)]] <- ggplot(best_month_year, aes(x = factor(Month, levels = 1:12),
+                               y = avg_delay, label = sprintf("%0.2f", round(avg_delay, digits = 2)))) +
+    geom_bar(stat = "identity", color = "black", fill = "pink", width = 0.8) +
+    scale_x_discrete(labels = c("1" = "January", "2" = "February", "3" = "March", "4" = "April", "5" = "May", "6" = "June", 
+                                "7" = "July", "8" = "August", "9" = "September", "10" = "October", "11" = "November", "12" = "December")) +
+    labs(title = paste("Best Time Of Year", year), x = "Month", y = "Average Delay (Mins)") + 
+    theme(plot.title = element_text(hjust = 0.5)) +
+    geom_text(size = 3, hjust = 0.5, vjust = 1.5) +
+    theme(axis.text.x = element_text(angle = 30))
+}
+
+list_month_day
+
+```
+
+
+Question 2(b)
+**Evaluate whether older planes suffer more delays on a year-to-year basis**
+
+
+```{r}
+for (year in 1999:2008) {
+
+  year_flight <- get(paste0("flights_", year))
+  
+  year_flight_cleaned <- year_flight %>%
+    filter(Cancelled == 0, Diverted == 0) %>%
+    distinct()
+  
+  year_flight_cleaned <- year_flight_cleaned %>%
+    mutate(date = make_date(Year, Month, DayofMonth))
+  
+  delay_columns <- c("ArrDelay", "DepDelay", "CarrierDelay", "NASDelay", "SecurityDelay", "LateAircraftDelay", "WeatherDelay")
+  year_flight_cleaned[delay_columns] <- lapply(year_flight_cleaned[delay_columns], function(x) as.numeric(as.character(x)))
+  
+  # Fill missing values with the last observation carried forward
+  year_flight_cleaned <- year_flight_cleaned %>%
+    fill(everything(), .direction = "down")
+  
+  # calculate total_delay
+  year_flight_cleaned <- year_flight_cleaned %>%
+    mutate(total_delay = rowSums(select(., delay_columns), na.rm = TRUE)) %>%
+    filter(total_delay > 0)
+
+  planes <- mutate(planes, issue_date = as.Date(issue_date, format = "%m/%d/%Y"))
+
+  planes_manu <- inner_join(year_flight_cleaned, planes, by = c("TailNum" = "tailnum"))
+  
+  planes_manu <- planes_manu %>%
+    mutate(AircraftAge = as.integer((date - issue_date) / dyears(1)))
+  
+  planes_manu <- planes_manu %>%
+    group_by(TailNum) %>%
+    mutate(AvgDelay = mean(total_delay, na.rm = TRUE)) %>%
+    ungroup()
+  
+  planes_manu_filtered <- filter(planes_manu, AircraftAge >= 0 & AircraftAge <= 22)
+  
+  p <- ggplot(planes_manu_filtered, aes(x = AircraftAge, y = AvgDelay)) +
+    geom_point(alpha = 0.4) +
+    geom_smooth(method = "lm", color = "red", se = FALSE) +
+    labs(title = paste("Average Delay vs. Aircraft Age for", year),
+         x = "Aircraft Age (years)", y = "Average Delay (minutes)") +
+    theme_minimal()
+  
+  print(p)
+}
+
+```
+
+
+Question 2(c)
+**For each year, fit a logistic regression model for the probability of diverted US flights using as many features as possible from attributes of the departure date, the scheduled departure and arrival times, the coordinates and distance between departure and planned arrival airports, and the carrier. Visualize the coefficients across years.**
+
+
+```{r}
+# Initialize a list to store coefficients for each year
+coefficients_list <- list()
+
+for (year in 1999:2008) {
+  # Load the dataset for the current year
+  year_flight <- get(paste0("flights_", year))
+  
+  # Sample 10,000 flights from the current year's data
+  sample_fd <- year_flight %>%
+    sample_n(size = 10000)
+  
+  # Join with 'airports' data to get coordinates for origin and destination airports
+  # Select for logistic regression 
+  year_flight_processed <- sample_fd %>%
+    left_join(airports, by = c("Origin" = "iata")) %>%
+    rename(Origin_lat = lat, Origin_long = long) %>%
+    left_join(airports, by = c("Dest" = "iata")) %>%
+    rename(Dest_lat = lat, Dest_long = long) %>%
+    select(Year, Month, DayofMonth, CRSDepTime, CRSArrTime, UniqueCarrier, Distance, Diverted,
+           Origin_lat, Origin_long, Dest_lat, Dest_long) %>%
+    mutate(
+      UniqueCarrier = as.factor(UniqueCarrier),
+      Year = as.factor(Year),
+      Month = as.factor(Month),
+      Diverted = as.factor(Diverted),
+      DayofMonth = as.factor(DayofMonth),
+      CRSDepTime = as.factor(CRSDepTime),
+      CRSArrTime = as.factor(CRSArrTime),
+      Distance = as.numeric(as.character(Distance)),
+      Origin_lat = as.numeric(as.character(Origin_lat)),
+      Origin_long = as.numeric(as.character(Origin_long)),
+      Dest_lat = as.numeric(as.character(Dest_lat)),
+      Dest_long = as.numeric(as.character(Dest_long))
+    ) %>%
+    na.omit()
+
+ factor_vars <- sapply(year_flight_processed, is.factor)
+    single_level_factors <- sapply(year_flight_processed[, factor_vars], function(x) nlevels(x) < 2)
+    
+    # formula to derive factors with two or more levels, then another formula to use Diverted as the response variable for prediction which then takes the previous formula to select only factors with levels greater than 1
+    formula_vars <- names(year_flight_processed)[!single_level_factors]
+    formula_str <- paste("Diverted ~", paste(formula_vars[!formula_vars %in% "Diverted"], collapse = " + "))
+    formula <- as.formula(formula_str)
+    
+    # Fit the logistic regression model using the updated formula
+    logistic_yearly <- glm(formula, data = year_flight_processed, family = binomial())
+    
+
+  # Store model coefficients
+  coefficients_list[[as.character(year)]] <- summary(logistic_yearly)$coefficients
+}
+
+# Prepare data for visualization
+coef_name <- "Distance"
+coef_values <- sapply(coefficients_list, function(coef) {
+  if(coef_name %in% rownames(coef)) coef[coef_name, "Estimate"] else NA
+})
+
+years <- names(coefficients_list)
+data_to_plot <- data.frame(Year = as.numeric(years), Coefficient = coef_values, stringsAsFactors = FALSE)
+
+# Filter out years where the coefficients are missing 
+data_to_plot <- na.omit(data_to_plot)
+
+# Visualization
+ggplot(data_to_plot, aes(x = Year, y = Coefficient)) +
+  geom_line() +
+  geom_point() +
+  labs(title = paste("Evolution of", coef_name, "Coefficient over Years"),
+       x = "Year", y = "Coefficient Estimate") +
+  theme_minimal()
+
+
+```
+
+
+```{r}
+for (year in 1999:2008) {
+  # Load the dataset for the current year
+  year_flight <- get(paste0("flights_", year))
+  
+  # Sample 10,000 flights from the current year's data
+  sample_fd <- year_flight %>%
+    sample_n(size = 10000)
+  
+  # Join with 'airports' data to get coordinates for origin and destination airports
+  # Then select and mutate as necessary
+  year_flight_processed <- sample_fd %>%
+    left_join(airports, by = c("Origin" = "iata")) %>%
+    rename(Origin_lat = lat, Origin_long = long) %>%
+    left_join(airports, by = c("Dest" = "iata")) %>%
+    rename(Dest_lat = lat, Dest_long = long) %>%
+    select(Year, Month, DayofMonth, CRSDepTime, CRSArrTime, UniqueCarrier, Distance, Diverted,
+           Origin_lat, Origin_long, Dest_lat, Dest_long) %>%
+    mutate(
+      UniqueCarrier = as.factor(UniqueCarrier),
+      Year = as.factor(Year),
+      Month = as.factor(Month),
+      Diverted = as.factor(Diverted),
+      DayofMonth = as.factor(DayofMonth),
+      CRSDepTime = as.factor(CRSDepTime),
+      CRSArrTime = as.factor(CRSArrTime),
+      Distance = as.numeric(as.character(Distance)),
+      Origin_lat = as.numeric(as.character(Origin_lat)),
+      Origin_long = as.numeric(as.character(Origin_long)),
+      Dest_lat = as.numeric(as.character(Dest_lat)),
+      Dest_long = as.numeric(as.character(Dest_long))
+    ) %>%
+    na.omit()
+
+ factor_vars <- sapply(year_flight_processed, is.factor)
+    single_level_factors <- sapply(year_flight_processed[, factor_vars], function(x) nlevels(x) < 2)
+    
+    # formula excluding these factors
+    formula_vars <- names(year_flight_processed)[!single_level_factors]
+    formula_str <- paste("Diverted ~", paste(formula_vars[!formula_vars %in% "Diverted"], collapse = " + "))
+    formula <- as.formula(formula_str)
+    
+    # Fit the logistic regression model using the updated formula
+    logistic_yearly <- glm(formula, data = year_flight_processed, family = binomial())
+    
+ # Making predictions for the current year's data
+  predictions <- predict(logistic_yearly, type = "response", newdata = year_flight_processed)
+  
+  # Calculate and plot ROC curve for the current year
+  roc_result <- roc(response = year_flight_processed$Diverted, predictor = predictions)
+  plot(roc_result, main = sprintf("ROC Curve for Year %d", year))
+  auc_value <- auc(roc_result)
+  print(sprintf("AUC for Year %d: %f", year, auc_value))
+}
+```
+
+
+```{r}
+
+# Specified predictors, excluding 'Diverted' as it's the outcome variable
+predictors <- c("Year", "Month", "DayofMonth", "CRSDepTime", "CRSArrTime", "UniqueCarrier", "Distance", "Origin_lat", "Origin_long", "Dest_lat", "Dest_long")
+
+# Initialize a list to store aggregated coefficient values for each predictor
+coef_values_list <- list()
+
+# Loop through each predictor to aggregate its coefficients across all years
+for (coef_name in predictors) {
+  coef_values_list[[coef_name]] <- sapply(coefficients_list, function(coef) {
+    if (coef_name %in% rownames(coef)) coef[coef_name, "Estimate"] else NA
+  })
+}
+
+# Convert the list of aggregated coefficients into a data frame
+years <- 1999:2008  
+coef_data <- do.call(rbind, lapply(names(coef_values_list), function(var) {
+  data.frame(Variable = var, Year = years, Estimate = coef_values_list[[var]], stringsAsFactors = FALSE)
+}))
+
+# Year is numeric for plotting
+coef_data$Year <- as.numeric(as.character(coef_data$Year))
+
+# visualisation
+ggplot(coef_data, aes(x = Year, y = Estimate, color = Variable)) +
+  geom_line() +  
+  geom_point() +  
+  labs(title = "Evolution of Regression Coefficients Over Time",
+       x = "Year", y = "Coefficient Estimate") +
+  theme_minimal() +
+  theme(legend.title = element_blank(), legend.position = "right")  
+
+
+```
+```{r}
+
+predictors <- c("Year", "Month", "DayofMonth", "CRSDepTime", "CRSArrTime", "UniqueCarrier", "Distance", "Origin_lat", "Origin_long", "Dest_lat", "Dest_long")
+
+# Loop through each predictor and create a plot
+for (coef_name in predictors) {
+  # Filter the data for the current predictor
+  coef_values <- sapply(coefficients_list, function(coef) {
+  if(coef_name %in% rownames(coef)) coef[coef_name, "Estimate"] else NA
+})
+  # Plot
+  
+  years <- names(coefficients_list)
+  data_to_plot <- data.frame(Year = as.numeric(years), Coefficient = coef_values, stringsAsFactors = FALSE)
+  
+
+  data_to_plot <- na.omit(data_to_plot)
+  
+  
+# Visualization
+ g<- ggplot(data_to_plot, aes(x = Year, y = Coefficient)) +
+   geom_line() +
+   geom_point() +
+   labs(title = paste("Evolution of", coef_name, "Coefficient over Years"),
+       x = "Year", y = "Coefficient Estimate") +
+   theme_minimal()
+  print(g)
+}
+
+```
+
+
+```{r}
+summary(logistic_yearly)
+# The Coefficients are not ideal predictors because their P values are all high. Thus it may not be ideal to plot them. However I have provided visualisations in previous graphs. The coefficients in the following logistic_yearly output were only Month, DayofMonth, and CRSDepTime.
+```
+```{r}
+
+summary_logistic <- summary(logistic_yearly)
+
+summary_text <- capture.output(summary_logistic)
+
+
+print(tail(summary_text, 14))
+```
+
+
+
+

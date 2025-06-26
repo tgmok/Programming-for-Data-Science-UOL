@@ -1,0 +1,130 @@
+---
+title: "Question 1"
+author: "Trixie Grace Mok"
+date: "2024-02-17"
+output: html_document
+---
+```{r}
+## Load necessary Libraries
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+
+# Probability Desnity Function
+pdf_f <- function(x) {
+  1/2 * exp(-abs(x))
+}
+
+# Metropolis-Hastings algorithm
+metropolis_hastings <- function(N, s) {
+  sampless <- numeric(N + 1)  
+  sampless[1] <- 0  
+  for (i in 2:(N + 1)) {
+    x_star <- rnorm(1, mean = sampless[i - 1], sd = s)  
+    log_r <- log(pdf_f(x_star)) - log(pdf_f(sampless[i - 1]))  
+    u <- log(runif(1)) 
+    if (u < log_r) {
+      sampless[i] <- x_star  
+    } else {
+      sampless[i] <- sampless[i - 1]  
+    }
+  }
+  sampless[-1]  
+}
+
+# Parameters
+N <- 10000
+s <- 1
+
+# Generate sampless
+sampless <- metropolis_hastings(N, s)
+
+# Compute sample mean and standard deviation
+sample_mean <- mean(sampless)
+sample_std <- sd(sampless)
+
+# Plotting
+ggplot(data.frame(x = sampless), aes(x)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 50, fill = "skyblue", color = "black", alpha = 0.6) +
+  geom_density(aes(color = "Kernel Density Estimate")) +
+  stat_function(fun = pdf_f, aes(color = "True PDF"), linewidth = 1) +
+  labs(title = "Metropolis-Hastings sampless", x = "x", y = "Density") +
+  theme_minimal() +
+  scale_color_manual(name = NULL, values = c("red", "blue"), labels = c("Kernel Density Estimate", "True PDF"))
+
+```
+
+```{r}
+# Print sample mean and standard deviation
+print(paste("Sample mean:", sample_mean))
+print(paste("Sample standard deviation:", sample_std))
+```
+
+```{r}
+# Part b
+
+pdf_f <- function(x) {
+  1/2 * exp(-abs(x))
+}
+
+metropolis_hastings <- function(N, s, ini) {
+  sampless <- numeric(N + 1)
+  sampless[1] <- ini
+  for (i in 2:(N + 1)) {
+    x_star <- rnorm(1, mean = sampless[i - 1], sd = s)
+    log_r <- log(pdf_f(x_star)) - log(pdf_f(sampless[i - 1]))
+    u <- log(runif(1))
+    if (u < log_r) {
+      sampless[i] <- x_star
+    } else {
+      sampless[i] <- sampless[i - 1]
+    }
+  }
+  sampless[-1]  
+}
+```
+
+```{r}
+compute_r_hat <- function(chains) {
+  J <- length(chains)
+  N <- length(chains[[1]])
+  Mj <- sapply(chains, mean)
+  Vj <- sapply(chains, function(chain) var(chain) * (N - 1) / N)
+  W <- mean(Vj)
+  M <- mean(Mj)
+  B <- N * var(Mj) / (J - 1)
+  R_hat <- sqrt((B/W - 1/N + 1))
+  return(R_hat)
+}
+
+```
+
+
+```{r}
+N <- 2000
+J <- 4
+s_values <- seq(0.001, 1, length.out = 100)
+
+r_hats <- sapply(s_values, function(s) {
+  chains <- replicate(J, metropolis_hastings(N, s, rnorm(1)), simplify = FALSE)
+  compute_r_hat(chains)
+})
+
+# Create a data frame for plotting
+data <- data.frame(s = s_values, R_hat = r_hats)
+```
+
+```{r}
+
+ggplot(data, aes(x = s, y = R_hat)) +
+  geom_line(color = "black") +  
+  labs(x = "s value", y = "R hat value", title = "R hat values over a Range of s values") +
+  theme_minimal()
+
+
+```
+
+
+
+
+
